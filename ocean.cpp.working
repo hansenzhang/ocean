@@ -1,0 +1,200 @@
+/**
+ *  Origin:  Lehigh CSE Department
+ *  Course:  CSE 375/475
+ *  Date:    2013-09-11
+ *  Version: 1
+ *
+ *  Description: This file implements the ocean simulations
+ *
+ *  This should be the focal point for student efforts to implement their
+ *  programs.
+ */
+
+#include <iostream>
+#include <algorithm>
+
+#include "tbb/tbb.h"
+#include "config_t.hpp"
+#include "ocean.hpp"
+#define locate(x, y, z) ((x) * (z) + (y))
+
+using namespace tbb;
+using std::cout;
+using std::endl;
+
+/**
+ *  An array of points, to simulate our ocean
+ */
+float* ocean_points;
+
+/**
+ *  Allocate an ocean and populate it with random floats.  Since this is an
+ *  ocean simulation, we'll use reasonable celsius temperatures (e.g.,
+ *  between 0 and 51), and we'll only have 3 significant digits to the right
+ *  of the decimal.
+ */
+void init_ocean(config_t& cfg)
+{
+    // make a copy of the seed, since it gets modified by each call to
+    // rand_r()
+    unsigned seed = cfg.seed;
+
+    ocean_points = new float[cfg.gridsize * cfg.gridsize];
+    for (int i = 0; i < cfg.gridsize * cfg.gridsize; ++i) {
+        // NB: making a random float from two random ints that we mod into a
+        // reasonable range
+        unsigned lhs = rand_r(&seed);
+        unsigned rhs = rand_r(&seed);
+        lhs = lhs % 50;
+        rhs = rhs % 1000;
+        float value = rhs;
+        value = value / (float)1000;
+        value += lhs;
+        ocean_points[i] = value;
+    }
+}
+
+/**
+ *  When a simulation is done, we can use this to free the ocean_points data
+ *  structure.
+ */
+void free_ocean(config_t& cfg)
+{
+    //free(ocean_points);
+    // We shouldn't really use free if we initialize using new...
+    delete ocean_points;
+}
+
+/**
+ *  Simple print routine to show the state of the ocean_points array
+ */
+void dump_ocean(config_t& cfg)
+{
+    if (!cfg.verbose)
+        return;
+    for (int i = 0; i < cfg.gridsize * cfg.gridsize; ++i) {
+        cout << ocean_points[i];
+        if ((i + 1) % cfg.gridsize == 0)
+            cout << endl;
+        else
+            cout << ", ";
+    }
+}
+
+/**
+ *  Perform a sequential ocean simulation
+ */
+void ocean_sequential(config_t& cfg)
+{
+    
+    int i, j;
+    float* ocean_temp = new float[cfg.gridsize * cfg.gridsize];
+    std::copy(ocean_points, ocean_points + (cfg.gridsize * cfg.gridsize), ocean_temp);
+    
+    float top, bottom, left, right, average;
+    for (int iter = 0; iter < cfg.iters; iter++){
+        for (i = 1; i < cfg.gridsize - 1; i++) {
+            for (j = 1; j < cfg.gridsize -1 ; j++) {
+                top = ocean_points[locate(i - 1, j, cfg.gridsize)];
+                bottom = ocean_points[locate(i + 1, j, cfg.gridsize)];
+                left = ocean_points[locate(i, j - 1, cfg.gridsize)];
+                right = ocean_points[locate(i, j + 1, cfg.gridsize)];
+                average = (top + bottom + left + right) / 4;
+                ocean_temp[locate(i, j, cfg.gridsize)] = average;
+            }
+        }
+        //ocean_points = ocean_temp;
+        // std::copy works faster for the serial implementation
+        std::copy(ocean_temp, ocean_temp + (cfg.gridsize * cfg.gridsize), ocean_points);
+    }
+    // Reassignment to the ocean_points pointer
+    // Note that both ocean_temp and ocean_points
+    // will be freed by free_ocean()
+    //free(ocean_temp);
+    //ocean_points = ocean_temp;
+    delete ocean_temp;
+}
+
+/**
+ *  Perform a parallel ocean simulation, using TBB
+ */
+void ocean_parallel(config_t& cfg)
+{
+
+    //parallel_for(int(0), cfg.gridsize * cfg.gridsize, int(1), [](int a) {
+            //cout << "Testing tbb" << endl;
+    //        });
+    //
+    /*
+    parallel_for(blocked_range<int>(1, cfg.gridsize * cfg.gridsize) , [](blocked_range<int > &r) {  
+        parallel_for(int(0), cfg.gridsize * cfg.gridsize, int(i), [](int a) {
+        
+        });
+    }); */
+    float* ocean_temp = new float[cfg.gridsize * cfg.gridsize];
+    
+    std::copy(ocean_points, ocean_points + (cfg.gridsize * cfg.gridsize), ocean_temp);
+   
+    float top, bottom, left, right, average;
+    /*
+    for (int iter = 0; iter < cfg.iters; iter++){
+        parallel_for(int(1), cfg.gridsize - 1, int(1) , [&](const int i) {  
+            parallel_for(int(1), cfg.gridsize - 1, int(1), [&](const int j) {
+                    top = ocean_points[locate(i - 1, j, cfg.gridsize)];
+                    bottom = ocean_points[locate(i + 1, j, cfg.gridsize)];
+                    left = ocean_points[locate(i, j - 1, cfg.gridsize)];
+                    right = ocean_points[locate(i, j + 1, cfg.gridsize)];
+                    average = (top + bottom + left + right) / 4;
+                    ocean_temp[locate(i, j, cfg.gridsize)] = average;
+            });
+        });
+        std::copy(ocean_temp, ocean_temp + (cfg.gridsize * cfg.gridsize), ocean_points); 
+    }
+    */ 
+    
+    for (int iter = 0; iter != cfg.iters; ++iter){
+        //affinity_partitioner ap;
+        parallel_for(blocked_range2d<int>(1, cfg.gridsize - 1, cfg.gridsize / 4 , 1, cfg.gridsize - 1, cfg.gridsize / 4), [&](const blocked_range2d<int> &r){
+            for (int i = r.rows().begin(); i != r.rows().end(); ++i) {
+                for (int j = r.cols().begin(); j != r.cols().end(); ++j) {
+                    /* 
+                    top = *(ocean_points + (i - 1) * cfg.gridsize + j );
+                    bottom = *(ocean_points + (i + 1) * cfg.gridsize + j );
+                    left = *(ocean_points + (i) * cfg.gridsize + (j - 1) );
+                    right = *(ocean_points + (i) * cfg.gridsize + (j + 1) );
+                      */  
+                //cout << "Top: " << top<< endl;
+                    top = ocean_points[locate(i - 1, j, cfg.gridsize)];
+                    bottom = ocean_points[locate(i + 1, j, cfg.gridsize)];
+                    left = ocean_points[locate(i, j - 1, cfg.gridsize)];
+                    right = ocean_points[locate(i, j + 1, cfg.gridsize)];
+                    average = (top + bottom + left + right) / 4;
+                    ocean_temp[locate(i, j, cfg.gridsize)] = average;
+                }
+            } 
+        });
+        std::copy(ocean_temp, ocean_temp + (cfg.gridsize * cfg.gridsize), ocean_points);
+    } 
+    /*
+    for (int iter = 0; iter < cfg.iters; iter++){
+    //affinity_partitioner ap; 
+
+        parallel_for(blocked_range<int>(1, cfg.gridsize - 1), [&](const blocked_range<int> &r){
+            for (int i = r.begin(); i != r.end(); ++i) {
+                for (int j = r.begin(); j != r.end(); ++j) {
+                    top = ocean_points[locate(i - 1, j, cfg.gridsize)];
+                    bottom = ocean_points[locate(i + 1, j, cfg.gridsize)];
+                    left = ocean_points[locate(i, j - 1, cfg.gridsize)];
+                    right = ocean_points[locate(i, j + 1, cfg.gridsize)];
+                    average = (top + bottom + left + right) / 4;
+                    ocean_temp[locate(i, j, cfg.gridsize)] = average;
+                }
+            } 
+        });
+         
+        //ocean_points = ocean_temp;
+        std::copy(ocean_temp, ocean_temp + (cfg.gridsize * cfg.gridsize), ocean_points);
+    } */
+    delete ocean_temp;
+}
+
