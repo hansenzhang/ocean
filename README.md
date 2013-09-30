@@ -1,4 +1,5 @@
 ===Writeup for p2===
+
 The average speedup calculated for P2 ended up 
 at around 2.4 for the default gridsize and 2.2 
 for a gridsize of 1026, averaged over 10 tests. You can 
